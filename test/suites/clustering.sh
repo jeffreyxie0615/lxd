@@ -2622,9 +2622,11 @@ test_clustering_failure_domains() {
   # Set failure domains
 
   # shellcheck disable=SC2039
-  printf "roles: [\"database\"]\nfailure_domain: \"az1\"\ngroups: [\"default\"]" | LXD_DIR="${LXD_THREE_DIR}" lxc cluster edit node1
+  # printf "roles: [\"database\"]\nfailure_domain: \"az1\"\ngroups: [\"default\"]" | LXD_DIR="${LXD_THREE_DIR}" lxc cluster edit node1
+  LXD_DIR="${LXD_THREE_DIR}" lxc cluster failure-domain set node1 "az1"
   # shellcheck disable=SC2039
   printf "roles: [\"database\"]\nfailure_domain: \"az2\"\ngroups: [\"default\"]" | LXD_DIR="${LXD_THREE_DIR}" lxc cluster edit node2
+  LXD_DIR="${LXD_THREE_DIR}" lxc cluster failure-domain set node2
   # shellcheck disable=SC2039
   printf "roles: [\"database\"]\nfailure_domain: \"az3\"\ngroups: [\"default\"]" | LXD_DIR="${LXD_THREE_DIR}" lxc cluster edit node3
   # shellcheck disable=SC2039

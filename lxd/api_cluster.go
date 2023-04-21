@@ -157,6 +157,12 @@ var internalClusterHealCmd = APIEndpoint{
 	Post: APIEndpointAction{Handler: internalClusterHeal},
 }
 
+var updateClusterFailureDomainCmd = APIEndpoint{
+	Path: "cluster/failure-domain/{name}",
+
+	Post: APIEndpointAction{Handler: updateClusterFailureDomain},
+}
+
 // swagger:operation GET /1.0/cluster cluster cluster_get
 //
 //	Get the cluster configuration
@@ -4468,3 +4474,89 @@ func autoHealCluster(ctx context.Context, d *Daemon) error {
 
 	return nil
 }
+
+// Only update the failure domain for a cluster
+func updateClusterFailureDomain(d *Daemon, r *http.Request) response.Response {
+	s := d.State()
+
+	name, err := url.PathUnescape(mux.Vars(r)["name"])
+	if err != nil {
+		return response.SmartError(err)
+	}
+
+	var member db.NodeInfo
+	var memberInfo *api.ClusterMember
+
+	err = d.db.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+		failureDomains, err := tx.GetFailureDomainsNames(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed loading failure domains names: %w", err)
+		}
+
+		memberFailureDomains, err := tx.GetNodesFailureDomains(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed loading member failure domains: %w", err)
+		}
+
+		member, err = tx.GetNodeByName(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		args := db.NodeInfoArgs{
+			FailureDomains:       failureDomains,
+			MemberFailureDomains: memberFailureDomains,
+			OfflineThreshold:     s.GlobalConfig.OfflineThreshold(),
+		}
+
+		memberInfo, err = member.ToAPI(ctx, tx, args)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return response.SmartError(err)
+	}
+	// Validate the request is fine
+	err = util.EtagCheck(r, memberInfo.ClusterMemberPut)
+	if err != nil {
+		return response.PreconditionFailed(err)
+	}
+	
+	// Parse the request
+	req := api.ClusterMemberPut{}
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
+	err = d.db.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		nodeInfo, err := tx.GetNodeByName(ctx, name)
+		if err != nil {
+			return fmt.Errorf("Loading node information: %w", err)
+		}
+
+		err = clusterValidateConfig(req.Config)
+		if err != nil {
+			return err
+		}
+
+		err = tx.UpdateNodeFailureDomain(ctx, nodeInfo.ID, req.FailureDomain)
+		if err != nil {
+			return fmt.Errorf("Update failure domain: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return response.SmartError(err)
+	}
+
+	requestor := request.CreateRequestor(r)
+	s.Events.SendLifecycle(projectParam(r), lifecycle.ClusterMemberUpdated.Event(name, requestor, nil))
+	return response.EmptySyncResponse
+}
+
+

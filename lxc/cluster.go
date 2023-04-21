@@ -100,6 +100,10 @@ func (c *cmdCluster) Command() *cobra.Command {
 	clusterRoleCmd := cmdClusterRole{global: c.global, cluster: c}
 	cmd.AddCommand(clusterRoleCmd.Command())
 
+	// Failure domain member
+	clusterFailureDomain := cmdClusterFailureDomain{global: c.global, cluster: c}
+	cmd.AddCommand(clusterFailureDomain.Command())
+
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
 	cmd.Run = func(cmd *cobra.Command, args []string) { _ = cmd.Usage() }
@@ -1151,6 +1155,53 @@ func (c *cmdClusterRestore) Command() *cobra.Command {
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(`Restore cluster member`))
 
 	return cmd
+}
+
+// Cluster Domain Failure member.
+type cmdClusterFailureDomain struct {
+	global  *cmdGlobal
+	cluster *cmdCluster
+}
+
+func (c *cmdClusterFailureDomain) Command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = usage("failure-domain", i18n.G("[<remote>:]<member>"))
+	cmd.Short = i18n.G("Update failure domain")
+	cmd.Long = cli.FormatSection(i18n.G("Description"),
+		i18n.G("Add specific cluster to failure domain."))
+
+	cmd.RunE = c.Run
+	return cmd
+}
+
+func (c *cmdClusterFailureDomain) Run(cmd *cobra.Command, args []string) error {
+	exit, err := c.global.CheckArgs(cmd, args, 2, 3)
+	if exit {
+		return err
+	}
+	
+	// Parse remote
+	resources, err := c.global.ParseServers(args[0])
+	if err != nil {
+		return err
+	}
+
+	resource := resources[0]
+	fmt.Print(resource)
+	fmt.Print(args[1])
+
+	// Extract the current value
+	_, etag, err := resource.server.GetClusterMember(resource.name)
+	if err != nil {
+		return err
+	}
+
+	newdata := api.ClusterMemberPut{}
+	err = yaml.Unmarshal([]byte(args[1]), &newdata.FailureDomain)
+	if err == nil {
+		err = resource.server.UpdateClusterMember(resource.name, newdata, etag)
+	}
+	return err
 }
 
 func (c *cmdClusterEvacuateAction) Command(action string) *cobra.Command {

@@ -309,3 +309,24 @@ func (r *ProtocolLXD) GetClusterGroup(name string) (*api.ClusterGroup, string, e
 
 	return &group, etag, nil
 }
+
+func (r *ProtocolLXD) UpdateClusterFailureDomain(name string, member api.ClusterMemberPut, ETag string) (error) {
+	if !r.HasExtension("clustering_edit_roles") {
+		return fmt.Errorf("The server is missing the required \"clustering_edit_roles\" API extension")
+	}
+
+	if member.FailureDomain != "" {
+		if !r.HasExtension("clustering_failure_domains") {
+			return fmt.Errorf("The server is missing the required \"clustering_failure_domains\" API extension")
+		}
+	}
+
+	// Send the request
+	_, _, err := r.query("PUT", fmt.Sprintf("/cluster/failure-domain/%s", name), member, ETag)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
